@@ -1,6 +1,6 @@
 # Módulo Terraform para AWS SQS
 
-Este módulo permite crear y configurar colas Amazon SQS (Simple Queue Service) con todas las mejores prácticas de seguridad, nomenclatura y configuración según los estándares de Pragma CloudOps.
+Este módulo permite crear y configurar colas Amazon SQS (Simple Queue Service) con todas las mejores prácticas de seguridad, nomenclatura y configuración según los estándares.
 
 ## Características
 
