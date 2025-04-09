@@ -1,0 +1,119 @@
+###########################################
+########## Common variables ###############
+###########################################
+
+profile     = "profile01"
+aws_region  = "us-east-1"
+environment = "dev"
+client      = "pragma"
+project     = "payments"
+common_tags = {
+  environment   = "dev"
+  project-name  = "payments"
+  cost-center   = "cloud-ops"
+  owner         = "cloudops"
+  area          = "infrastructure"
+  provisioned   = "terraform"
+  datatype      = "operational"
+}
+
+###########################################
+############ SQS variables ###############
+###########################################
+
+sqs_config = {
+  "orders" = {
+    application               = "orders"
+    delay_seconds             = 0
+    max_message_size          = 262144
+    message_retention_seconds = 345600
+    receive_wait_time_seconds = 0
+    visibility_timeout_seconds = 30
+    fifo_queue                = false
+    kms_master_key_id         = "alias/aws/sqs"
+    dead_letter_queue         = false
+    statements = [
+      {
+        sid         = "AllowLambdaAccess"
+        actions     = ["sqs:SendMessage", "sqs:ReceiveMessage", "sqs:DeleteMessage"]
+        resources   = ["*"]
+        effect      = "Allow"
+        type        = "Service"
+        identifiers = ["lambda.amazonaws.com"]
+        condition   = []
+      }
+    ]
+    additional_tags = {
+      service-tier = "standard"
+      backup-policy = "none"
+      data-classification = "internal"
+    }
+  },
+  "orders-dead-letter" = {  # Cambiado de "orders-dlq"
+    application               = "orders"
+    delay_seconds             = 0
+    max_message_size          = 262144
+    message_retention_seconds = 1209600
+    receive_wait_time_seconds = 0
+    visibility_timeout_seconds = 30
+    fifo_queue                = false
+    kms_master_key_id         = "alias/aws/sqs"
+    dead_letter_queue         = true
+    statements                = []
+    additional_tags = {
+      service-tier = "standard"
+      backup-policy = "none"
+      data-classification = "internal"
+    }
+  },
+  "notifications" = {
+    application               = "notifications"
+    delay_seconds             = 60
+    max_message_size          = 262144
+    message_retention_seconds = 345600
+    receive_wait_time_seconds = 20
+    visibility_timeout_seconds = 60
+    fifo_queue                = true
+    kms_master_key_id         = "alias/aws/sqs"
+    dead_letter_queue         = false
+    statements = [
+      {
+        sid         = "AllowSNSPublish"
+        actions     = ["sqs:SendMessage"]
+        resources   = ["*"]
+        effect      = "Allow"
+        type        = "Service"
+        identifiers = ["sns.amazonaws.com"]
+        condition   = [
+          {
+            test     = "ArnEquals"
+            variable = "aws:SourceArn"
+            values   = ["arn:aws:sns:us-east-1:123456789012:notifications-topic"]
+          }
+        ]
+      }
+    ]
+    additional_tags = {
+      service-tier = "premium"
+      backup-policy = "none"
+      data-classification = "confidential"
+    }
+  },
+  "notifications-dead-letter" = {  # Cambiado de "notifications-dlq"
+    application               = "notifications"
+    delay_seconds             = 0
+    max_message_size          = 262144
+    message_retention_seconds = 1209600
+    receive_wait_time_seconds = 0
+    visibility_timeout_seconds = 30
+    fifo_queue                = true
+    kms_master_key_id         = "alias/aws/sqs"
+    dead_letter_queue         = true
+    statements                = []
+    additional_tags = {
+      service-tier = "premium"
+      backup-policy = "none"
+      data-classification = "confidential"
+    }
+  }
+}
