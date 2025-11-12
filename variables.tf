@@ -50,10 +50,10 @@ variable "client" {
 }
 
 variable "environment" {
-  description = "Entorno de despliegue (dev, qa, pdn)"
+  description = "Entorno de despliegue (dev, qa, pdn, prod)"
   type        = string
   validation {
-    condition     = contains(["dev", "qa", "pdn"], var.environment)
-    error_message = "El entorno debe ser uno de: dev, qa, pdn."
+    condition     = contains(["dev", "qa", "pdn", "prod"], var.environment)
+    error_message = "El entorno debe ser uno de: dev, qa, pdn, prod."
   }
 }
