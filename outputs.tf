@@ -17,3 +17,14 @@ output "queue_names" {
   description = "Nombres de las colas SQS creadas"
   value       = { for k, v in aws_sqs_queue.sqs : k => v.name }
 }
+
+output "lambda_event_source_mappings" {
+  description = "Información de los Lambda triggers configurados, incluyendo UUID y estado"
+  value = {
+    for k, v in aws_lambda_event_source_mapping.sqs_trigger : k => {
+      uuid         = v.uuid
+      function_arn = v.function_arn
+      state        = v.state
+    }
+  }
+}

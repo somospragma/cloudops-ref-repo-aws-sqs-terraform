@@ -66,5 +66,13 @@ variable "sqs_config" {
     }))
     application    = string
     additional_tags = optional(map(string), {})
+    lambda_trigger = optional(object({
+      enabled                            = bool
+      function_arn                       = string
+      batch_size                         = optional(number, 10)
+      maximum_batching_window_in_seconds = optional(number, 0)
+      maximum_concurrency                = optional(number, null)
+      function_response_types            = optional(list(string), [])
+    }), null)
   }))
 }

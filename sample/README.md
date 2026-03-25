@@ -56,6 +56,7 @@ El archivo `terraform.tfvars.sample` incluye ejemplos para:
 2. **Cola SQS FIFO** con su correspondiente cola de letra muerta (DLQ)
 3. **Configuración de políticas de acceso** para permitir que servicios como Lambda y SNS interactúen con las colas
 4. **Configuración de alarmas** para monitorear la profundidad de las colas y los mensajes en las DLQ
+5. **Lambda trigger** configurado en la cola `orders` con batching, concurrencia limitada y reporte de fallos parciales
 
 ## Personalización
 
@@ -65,6 +66,7 @@ Puedes personalizar este ejemplo modificando:
 - Las políticas de acceso para las colas
 - Los umbrales de las alarmas
 - Las acciones de las alarmas
+- Los Lambda triggers (habilitarlos, ajustar batch size, concurrencia, etc.)
 
 ## Notas Importantes
 
