@@ -9,6 +9,7 @@ Este módulo permite crear y configurar colas Amazon SQS (Simple Queue Service) 
 - Cifrado en reposo con AWS KMS
 - Políticas de acceso personalizables
 - Nomenclatura y etiquetado estandarizado
+- Lambda triggers opcionales con soporte para batching, concurrencia y reporte de fallos parciales
 
 ## Uso
 
@@ -48,6 +49,14 @@ module "sqs_queues" {
       additional_tags = {
         service-tier = "standard"
         backup-policy = "none"
+      }
+      lambda_trigger = {
+        enabled                            = true
+        function_arn                       = "arn:aws:lambda:us-east-1:123456789012:function:process-orders"
+        batch_size                         = 10
+        maximum_batching_window_in_seconds = 5
+        maximum_concurrency                = 5
+        function_response_types            = ["ReportBatchItemFailures"]
       }
     },
     "orders-dead-letter" = {
@@ -156,6 +165,14 @@ sqs_config = {
       key1 = "value1"
       key2 = "value2"
     }
+    lambda_trigger = {        # Opcional - Configuración de Lambda trigger
+      enabled                            = bool
+      function_arn                       = string
+      batch_size                         = number   # Opcional, default: 10
+      maximum_batching_window_in_seconds = number   # Opcional, default: 0
+      maximum_concurrency                = number   # Opcional, default: null
+      function_response_types            = list(string) # Opcional, default: []
+    }
   }
 }
 ```
@@ -232,6 +249,37 @@ El módulo maneja el etiquetado de la siguiente manera:
 
 3. **Etiquetas adicionales por recurso**: Se pueden especificar etiquetas adicionales para cada cola SQS individualmente mediante el atributo `additional_tags` en la configuración de cada cola.
 
+## Lambda Triggers
+
+El módulo permite configurar opcionalmente una función Lambda como consumidor de la cola SQS mediante `aws_lambda_event_source_mapping`. Para habilitarlo, agregue el bloque `lambda_trigger` en la configuración de la cola:
+
+```hcl
+"orders" = {
+  # ... configuración de la cola ...
+  lambda_trigger = {
+    enabled                            = true
+    function_arn                       = "arn:aws:lambda:us-east-1:123456789012:function:process-orders"
+    batch_size                         = 10
+    maximum_batching_window_in_seconds = 5
+    maximum_concurrency                = 5
+    function_response_types            = ["ReportBatchItemFailures"]
+  }
+}
+```
+
+### Parámetros de lambda_trigger
+
+| Parámetro | Descripción | Tipo | Requerido | Default |
+|-----------|-------------|------|-----------|---------|
+| enabled | Activa o desactiva el trigger | bool | sí | - |
+| function_arn | ARN de la función Lambda | string | sí | - |
+| batch_size | Número máximo de mensajes por lote | number | no | 10 |
+| maximum_batching_window_in_seconds | Tiempo máximo de espera para acumular mensajes en un lote | number | no | 0 |
+| maximum_concurrency | Número máximo de invocaciones concurrentes (scaling_config) | number | no | null |
+| function_response_types | Tipos de respuesta de la función. Use `["ReportBatchItemFailures"]` para reporte de fallos parciales | list(string) | no | [] |
+
+> **Nota**: Si no se especifica `lambda_trigger` o se establece como `null`, no se creará ningún event source mapping para esa cola. La función Lambda debe tener los permisos IAM necesarios para consumir de la cola SQS (`sqs:ReceiveMessage`, `sqs:DeleteMessage`, `sqs:GetQueueAttributes`).
+
 ## Monitoreo
 
 > **Nota importante**: Este módulo no incluye la creación de alarmas CloudWatch. Para implementar monitoreo y alertas, se recomienda utilizar el módulo específico de CloudWatch de Pragma CloudOps, que permite configurar alarmas para métricas de SQS como:
@@ -252,6 +300,7 @@ El módulo maneja el etiquetado de la siguiente manera:
 | queue_urls | URLs de las colas SQS creadas |
 | queue_arns | ARNs de las colas SQS creadas |
 | queue_names | Nombres de las colas SQS creadas |
+| lambda_event_source_mappings | Información de los Lambda triggers configurados, incluyendo UUID, ARN de la función y estado |
 
 ## Mejores Prácticas Implementadas
 
@@ -259,6 +308,7 @@ El módulo maneja el etiquetado de la siguiente manera:
 - **Nomenclatura**: Estándar {client}-{functionality}-{environment}-{resource-type}-{resource-name}
 - **Etiquetado**: Etiquetas completas según política (environment, project, owner, client) a través de `default_tags`
 - **Modularización**: Estructura modular y reutilizable
+- **Integración**: Lambda triggers opcionales para procesamiento de mensajes
 
 ## Configuración del Backend
 

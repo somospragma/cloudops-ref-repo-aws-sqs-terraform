@@ -111,3 +111,36 @@ data "aws_iam_policy_document" "combined" {
     data.aws_iam_policy_document.dynamic_policy[each.key].json
   ]
 }
+
+###########################################
+############ Lambda Triggers ##############
+###########################################
+
+locals {
+  # Filtrar solo las colas que tienen lambda_trigger configurado y habilitado
+  lambda_triggers = {
+    for k, v in var.sqs_config : k => v.lambda_trigger
+    if v.lambda_trigger != null && v.lambda_trigger.enabled
+  }
+}
+
+resource "aws_lambda_event_source_mapping" "sqs_trigger" {
+  provider = aws.project
+  for_each = local.lambda_triggers
+
+  event_source_arn                   = aws_sqs_queue.sqs[each.key].arn
+  function_name                      = each.value.function_arn
+  batch_size                         = each.value.batch_size
+  maximum_batching_window_in_seconds = each.value.maximum_batching_window_in_seconds
+
+  dynamic "scaling_config" {
+    for_each = each.value.maximum_concurrency != null ? [each.value.maximum_concurrency] : []
+    content {
+      maximum_concurrency = scaling_config.value
+    }
+  }
+
+  function_response_types = length(each.value.function_response_types) > 0 ? each.value.function_response_types : null
+
+  enabled = true
+}
