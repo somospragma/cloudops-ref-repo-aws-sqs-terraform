@@ -31,6 +31,9 @@ variable "sqs_config" {
       maximum_batching_window_in_seconds = optional(number, 0)
       maximum_concurrency                = optional(number, null)
       function_response_types            = optional(list(string), [])
+      filter_criteria = optional(list(object({
+        pattern = string
+      })), [])
     }), null)
   }))
   validation {
