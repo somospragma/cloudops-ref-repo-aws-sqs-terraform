@@ -57,6 +57,15 @@ module "sqs_queues" {
         maximum_batching_window_in_seconds = 5
         maximum_concurrency                = 5
         function_response_types            = ["ReportBatchItemFailures"]
+        filter_criteria = [
+          {
+            pattern = jsonencode({
+              body = {
+                eventType = ["ORDER_CREATED", "ORDER_UPDATED"]
+              }
+            })
+          }
+        ]
       }
     },
     "orders-dead-letter" = {
@@ -172,6 +181,11 @@ sqs_config = {
       maximum_batching_window_in_seconds = number   # Opcional, default: 0
       maximum_concurrency                = number   # Opcional, default: null
       function_response_types            = list(string) # Opcional, default: []
+      filter_criteria = [                # Opcional, default: [] - Hasta 5 filtros
+        {
+          pattern = string              # Patrón JSON de hasta 4096 caracteres
+        }
+      ]
     }
   }
 }
@@ -263,6 +277,15 @@ El módulo permite configurar opcionalmente una función Lambda como consumidor 
     maximum_batching_window_in_seconds = 5
     maximum_concurrency                = 5
     function_response_types            = ["ReportBatchItemFailures"]
+    filter_criteria = [
+      {
+        pattern = jsonencode({
+          body = {
+            eventType = ["ORDER_CREATED", "ORDER_UPDATED"]
+          }
+        })
+      }
+    ]
   }
 }
 ```
@@ -277,6 +300,7 @@ El módulo permite configurar opcionalmente una función Lambda como consumidor 
 | maximum_batching_window_in_seconds | Tiempo máximo de espera para acumular mensajes en un lote | number | no | 0 |
 | maximum_concurrency | Número máximo de invocaciones concurrentes (scaling_config) | number | no | null |
 | function_response_types | Tipos de respuesta de la función. Use `["ReportBatchItemFailures"]` para reporte de fallos parciales | list(string) | no | [] |
+| filter_criteria | Lista de filtros de eventos. Cada filtro tiene un `pattern` JSON (hasta 4096 caracteres). Máximo 5 filtros. Si al menos uno coincide, Lambda procesa el evento. Ver [Filter Rule Syntax](https://docs.aws.amazon.com/lambda/latest/dg/invocation-eventfiltering.html#filtering-syntax) | list(object({pattern=string})) | no | [] |
 
 > **Nota**: Si no se especifica `lambda_trigger` o se establece como `null`, no se creará ningún event source mapping para esa cola. La función Lambda debe tener los permisos IAM necesarios para consumir de la cola SQS (`sqs:ReceiveMessage`, `sqs:DeleteMessage`, `sqs:GetQueueAttributes`).
 

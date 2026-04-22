@@ -55,6 +55,15 @@ sqs_config = {
       maximum_batching_window_in_seconds = 5
       maximum_concurrency                = 5
       function_response_types            = ["ReportBatchItemFailures"]
+      filter_criteria = [
+        {
+          pattern = jsonencode({
+            body = {
+              eventType = ["ORDER_CREATED", "ORDER_UPDATED"]
+            }
+          })
+        }
+      ]
     }
   },
   "orders-dead-letter" = {  # Cambiado de "orders-dlq"

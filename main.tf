@@ -142,5 +142,17 @@ resource "aws_lambda_event_source_mapping" "sqs_trigger" {
 
   function_response_types = length(each.value.function_response_types) > 0 ? each.value.function_response_types : null
 
+  dynamic "filter_criteria" {
+    for_each = length(each.value.filter_criteria) > 0 ? [true] : []
+    content {
+      dynamic "filter" {
+        for_each = each.value.filter_criteria
+        content {
+          pattern = filter.value.pattern
+        }
+      }
+    }
+  }
+
   enabled = true
 }
