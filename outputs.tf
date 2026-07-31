@@ -28,3 +28,22 @@ output "lambda_event_source_mappings" {
     }
   }
 }
+
+###########################################
+############ DLQ Outputs ##################
+###########################################
+
+output "dlq_arns" {
+  description = "ARNs de las Dead Letter Queues creadas"
+  value       = { for k, v in aws_sqs_queue.dlq : k => v.arn }
+}
+
+output "dlq_urls" {
+  description = "URLs de las Dead Letter Queues creadas"
+  value       = { for k, v in aws_sqs_queue.dlq : k => v.url }
+}
+
+output "dlq_names" {
+  description = "Nombres de las Dead Letter Queues creadas"
+  value       = { for k, v in aws_sqs_queue.dlq : k => v.name }
+}
