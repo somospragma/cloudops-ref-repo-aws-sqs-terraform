@@ -1,14 +1,14 @@
 variable "sqs_config" {
   description = "Configuración de colas SQS"
   type = map(object({
-    delay_seconds               = number
-    max_message_size            = number
-    message_retention_seconds   = number
-    receive_wait_time_seconds   = number
-    visibility_timeout_seconds  = number
-    fifo_queue                  = bool
-    kms_master_key_id           = string
-    dead_letter_queue           = bool
+    delay_seconds              = number
+    max_message_size           = number
+    message_retention_seconds  = number
+    receive_wait_time_seconds  = number
+    visibility_timeout_seconds = number
+    fifo_queue                 = bool
+    kms_master_key_id          = string
+    dead_letter_queue          = bool
     statements = list(object({
       sid         = string
       actions     = list(string)
@@ -22,8 +22,12 @@ variable "sqs_config" {
         values   = list(string)
       }))
     }))
-    application = string
+    application     = string
     additional_tags = optional(map(string), {})
+    redrive_policy = optional(object({
+      max_receive_count             = number
+      dlq_message_retention_seconds = optional(number, 1209600) # 14 días por defecto
+    }), null)
     lambda_trigger = optional(object({
       enabled                            = bool
       function_arn                       = string

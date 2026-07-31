@@ -5,7 +5,8 @@ Este módulo permite crear y configurar colas Amazon SQS (Simple Queue Service) 
 ## Características
 
 - Creación de colas SQS estándar y FIFO
-- Soporte para colas de letra muerta (DLQ)
+- Soporte para colas de letra muerta (DLQ) con naming explícito
+- Redrive Policy automática con creación de DLQ integrada
 - Cifrado en reposo con AWS KMS
 - Políticas de acceso personalizables
 - Nomenclatura y etiquetado estandarizado
@@ -174,6 +175,10 @@ sqs_config = {
       key1 = "value1"
       key2 = "value2"
     }
+    redrive_policy = {        # Opcional - Configuración de DLQ automática
+      max_receive_count             = number   # Intentos antes de enviar a DLQ
+      dlq_message_retention_seconds = number   # Opcional, default: 1209600 (14 días)
+    }
     lambda_trigger = {        # Opcional - Configuración de Lambda trigger
       enabled                            = bool
       function_arn                       = string
@@ -263,6 +268,115 @@ El módulo maneja el etiquetado de la siguiente manera:
 
 3. **Etiquetas adicionales por recurso**: Se pueden especificar etiquetas adicionales para cada cola SQS individualmente mediante el atributo `additional_tags` en la configuración de cada cola.
 
+## Redrive Policy (Dead Letter Queue automática)
+
+El módulo permite configurar una Redrive Policy que crea automáticamente una Dead Letter Queue (DLQ) asociada a la cola principal. Cuando un mensaje no puede ser procesado correctamente después de un número configurable de intentos, se redirige automáticamente a la DLQ para inspección y análisis posterior.
+
+### Uso
+
+Agregue el bloque `redrive_policy` en la configuración de la cola:
+
+```hcl
+"kb-docs" = {
+  # ... configuración de la cola ...
+  redrive_policy = {
+    max_receive_count             = 3       # Enviar a DLQ después de 3 intentos fallidos
+    dlq_message_retention_seconds = 1209600 # Opcional: retención en DLQ (default: 14 días)
+  }
+}
+```
+
+### Comportamiento
+
+Cuando se especifica `redrive_policy`:
+
+1. Se crea automáticamente una DLQ con nombre `{client}-{project}-{env}-dlq-{key}`
+2. La DLQ hereda la misma configuración de cifrado KMS que la cola principal
+3. Se configura el `redrive_policy` en la cola principal apuntando a la DLQ creada
+4. La DLQ recibe su propia política de acceso (acceso completo al propietario de la cuenta)
+
+### Parámetros de redrive_policy
+
+| Parámetro | Descripción | Tipo | Requerido | Default |
+|-----------|-------------|------|-----------|---------|
+| max_receive_count | Número máximo de veces que un mensaje puede ser recibido antes de ser enviado a la DLQ | number | sí | - |
+| dlq_message_retention_seconds | Tiempo de retención de mensajes en la DLQ (en segundos) | number | no | 1209600 (14 días) |
+
+### Diferencia con `dead_letter_queue`
+
+| Parámetro | Propósito | Crea DLQ | Configura Redrive |
+|-----------|-----------|----------|-------------------|
+| `dead_letter_queue = true` | Solo afecta el **naming** de la cola (prefijo `dlq-` en vez de `sqs-`) | No | No |
+| `redrive_policy = { ... }` | Crea una DLQ real y configura la redirección automática de mensajes fallidos | Sí | Sí |
+
+> **Nota**: Ambos parámetros son independientes. Use `redrive_policy` cuando necesite que los mensajes fallidos se muevan automáticamente a una DLQ. Use `dead_letter_queue = true` únicamente si quiere crear una cola con naming de DLQ (por ejemplo, para usarla como target de otra cola configurada externamente).
+
+### Ejemplo completo con DLQ
+
+```hcl
+module "sqs_queues" {
+  source = "/ruta/al/modulo/sqs"
+  providers = {
+    aws.project = aws.principal
+  }
+
+  client        = "pragma"
+  functionality = "sopp"
+  environment   = "dev"
+
+  sqs_config = {
+    "kb-docs-abc123" = {
+      application                = ""
+      delay_seconds              = 0
+      max_message_size           = 262144
+      message_retention_seconds  = 345600
+      receive_wait_time_seconds  = 0
+      visibility_timeout_seconds = 180
+      fifo_queue                 = false
+      kms_master_key_id          = "arn:aws:kms:us-east-1:123456789012:key/example-key-id"
+      dead_letter_queue          = false
+      statements = [
+        {
+          sid         = "AllowSNSSendMessage"
+          actions     = ["sqs:SendMessage"]
+          resources   = ["*"]
+          effect      = "Allow"
+          type        = "Service"
+          identifiers = ["sns.amazonaws.com"]
+          condition = [
+            {
+              test     = "ArnEquals"
+              variable = "aws:SourceArn"
+              values   = ["arn:aws:sns:us-east-1:123456789012:my-topic"]
+            }
+          ]
+        }
+      ]
+      redrive_policy = {
+        max_receive_count             = 3
+        dlq_message_retention_seconds = 1209600
+      }
+      lambda_trigger = {
+        enabled                            = true
+        function_arn                       = "arn:aws:lambda:us-east-1:123456789012:function:orchestrator"
+        batch_size                         = 100
+        maximum_batching_window_in_seconds = 30
+      }
+      additional_tags = {
+        service-tier  = "standard"
+        backup-policy = "none"
+      }
+    }
+  }
+}
+```
+
+Este ejemplo crea:
+- Cola principal: `pragma-sopp-dev-sqs-kb-docs-abc123`
+- DLQ asociada: `pragma-sopp-dev-dlq-kb-docs-abc123`
+
+Los mensajes que fallen 3 veces en la cola principal se mueven automáticamente a la DLQ.
+
 ## Lambda Triggers
 
 El módulo permite configurar opcionalmente una función Lambda como consumidor de la cola SQS mediante `aws_lambda_event_source_mapping`. Para habilitarlo, agregue el bloque `lambda_trigger` en la configuración de la cola:
@@ -325,10 +439,14 @@ El módulo permite configurar opcionalmente una función Lambda como consumidor 
 | queue_arns | ARNs de las colas SQS creadas |
 | queue_names | Nombres de las colas SQS creadas |
 | lambda_event_source_mappings | Información de los Lambda triggers configurados, incluyendo UUID, ARN de la función y estado |
+| dlq_arns | ARNs de las Dead Letter Queues creadas (solo colas con `redrive_policy` configurado) |
+| dlq_urls | URLs de las Dead Letter Queues creadas |
+| dlq_names | Nombres de las Dead Letter Queues creadas |
 
 ## Mejores Prácticas Implementadas
 
 - **Seguridad**: Cifrado en reposo con AWS KMS
+- **Resiliencia**: Redrive Policy con DLQ automática para mensajes no procesables
 - **Nomenclatura**: Estándar {client}-{functionality}-{environment}-{resource-type}-{resource-name}
 - **Etiquetado**: Etiquetas completas según política (environment, project, owner, client) a través de `default_tags`
 - **Modularización**: Estructura modular y reutilizable

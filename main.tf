@@ -11,11 +11,73 @@ locals {
   queue_names = {
     for k, v in var.sqs_config : k => {
       standard_name = "${var.client}-${var.functionality}-${var.environment}-${v["dead_letter_queue"] ? "dlq" : "sqs"}-${k}"
-      fifo_name = "${var.client}-${var.functionality}-${var.environment}-${v["dead_letter_queue"] ? "dlq" : "sqs"}-${k}.fifo"
-      final_name = v["fifo_queue"] ? "${var.client}-${var.functionality}-${var.environment}-${v["dead_letter_queue"] ? "dlq" : "sqs"}-${k}.fifo" : "${var.client}-${var.functionality}-${var.environment}-${v["dead_letter_queue"] ? "dlq" : "sqs"}-${k}"
+      fifo_name     = "${var.client}-${var.functionality}-${var.environment}-${v["dead_letter_queue"] ? "dlq" : "sqs"}-${k}.fifo"
+      final_name    = v["fifo_queue"] ? "${var.client}-${var.functionality}-${var.environment}-${v["dead_letter_queue"] ? "dlq" : "sqs"}-${k}.fifo" : "${var.client}-${var.functionality}-${var.environment}-${v["dead_letter_queue"] ? "dlq" : "sqs"}-${k}"
+    }
+  }
+
+  # Filtrar colas que tienen redrive_policy configurado (necesitan DLQ)
+  queues_with_dlq = {
+    for k, v in var.sqs_config : k => v if v.redrive_policy != null
+  }
+
+  # Generar nombres de DLQ
+  dlq_names = {
+    for k, v in local.queues_with_dlq : k => {
+      final_name = v["fifo_queue"] ? "${var.client}-${var.functionality}-${var.environment}-dlq-${k}.fifo" : "${var.client}-${var.functionality}-${var.environment}-dlq-${k}"
     }
   }
 }
+
+###########################################
+############ Dead Letter Queues ###########
+###########################################
+
+resource "aws_sqs_queue" "dlq" {
+  provider = aws.project
+  for_each = local.queues_with_dlq
+
+  name = local.dlq_names[each.key].final_name
+
+  # Configuración de retención extendida para inspección de mensajes fallidos
+  message_retention_seconds = each.value.redrive_policy.dlq_message_retention_seconds
+  fifo_queue                = each.value["fifo_queue"]
+
+  # Seguridad en reposo - Usar la misma KMS key que la cola principal
+  sqs_managed_sse_enabled = each.value["kms_master_key_id"] == "" ? true : null
+  kms_master_key_id       = each.value["kms_master_key_id"] != "" ? each.value["kms_master_key_id"] : null
+
+  tags = merge(
+    {
+      Name = local.dlq_names[each.key].final_name
+    },
+    each.value["additional_tags"]
+  )
+}
+
+# Política de acceso para las DLQ (permite al propietario de la cuenta acceso completo)
+resource "aws_sqs_queue_policy" "dlq_policy" {
+  provider  = aws.project
+  for_each  = local.queues_with_dlq
+  queue_url = aws_sqs_queue.dlq[each.key].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "__owner_statement"
+        Effect    = "Allow"
+        Principal = { AWS = data.aws_caller_identity.current.account_id }
+        Action    = "SQS:*"
+        Resource  = aws_sqs_queue.dlq[each.key].arn
+      }
+    ]
+  })
+}
+
+###########################################
+############ Main SQS Queues ##############
+###########################################
 
 resource "aws_sqs_queue" "sqs" {
   provider = aws.project
@@ -31,10 +93,16 @@ resource "aws_sqs_queue" "sqs" {
   receive_wait_time_seconds  = each.value["receive_wait_time_seconds"]
   visibility_timeout_seconds = each.value["visibility_timeout_seconds"]
   fifo_queue                 = each.value["fifo_queue"]
-  
+
   # Seguridad en reposo - Cifrado
-  sqs_managed_sse_enabled    = each.value["kms_master_key_id"] == "" ? true : null
-  kms_master_key_id          = each.value["kms_master_key_id"] != "" ? each.value["kms_master_key_id"] : null
+  sqs_managed_sse_enabled = each.value["kms_master_key_id"] == "" ? true : null
+  kms_master_key_id       = each.value["kms_master_key_id"] != "" ? each.value["kms_master_key_id"] : null
+
+  # Redrive Policy — redirige mensajes fallidos a la DLQ
+  redrive_policy = each.value.redrive_policy != null ? jsonencode({
+    deadLetterTargetArn = aws_sqs_queue.dlq[each.key].arn
+    maxReceiveCount     = each.value.redrive_policy.max_receive_count
+  }) : null
 
   # Etiquetas - Solo Name y etiquetas adicionales específicas para este recurso
   tags = merge(
@@ -47,7 +115,7 @@ resource "aws_sqs_queue" "sqs" {
 
 # Configuración de políticas de acceso para las colas SQS
 resource "aws_sqs_queue_policy" "sqs_policy" {
-  provider = aws.project
+  provider  = aws.project
   for_each  = var.sqs_config
   queue_url = aws_sqs_queue.sqs[each.key].id
   policy    = data.aws_iam_policy_document.combined[each.key].json
@@ -59,12 +127,12 @@ data "aws_iam_policy_document" "root_policy" {
   for_each = var.sqs_config
 
   statement {
-    sid       = "__owner_statement"
-    actions   = ["SQS:*"]
+    sid     = "__owner_statement"
+    actions = ["SQS:*"]
     resources = [
       "arn:aws:sqs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:${local.queue_names[each.key].final_name}"
     ]
-    effect    = "Allow"
+    effect = "Allow"
     principals {
       type        = "AWS"
       identifiers = [data.aws_caller_identity.current.account_id]
@@ -105,7 +173,7 @@ data "aws_iam_policy_document" "dynamic_policy" {
 data "aws_iam_policy_document" "combined" {
   provider = aws.project
   for_each = var.sqs_config
-  
+
   override_policy_documents = [
     data.aws_iam_policy_document.root_policy[each.key].json,
     data.aws_iam_policy_document.dynamic_policy[each.key].json
