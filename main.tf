@@ -2,10 +2,6 @@ data "aws_caller_identity" "current" {
   provider = aws.project
 }
 
-data "aws_region" "current" {
-  provider = aws.project
-}
-
 locals {
   # Generar nombres de colas de forma más simple
   queue_names = {
@@ -129,10 +125,9 @@ data "aws_iam_policy_document" "root_policy" {
   statement {
     sid     = "__owner_statement"
     actions = ["SQS:*"]
-    resources = [
-      "arn:aws:sqs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:${local.queue_names[each.key].final_name}"
-    ]
-    effect = "Allow"
+    # ARN de la propia cola: evita data.aws_region.current.name, deprecado en el provider 6.x.
+    resources = [aws_sqs_queue.sqs[each.key].arn]
+    effect    = "Allow"
     principals {
       type        = "AWS"
       identifiers = [data.aws_caller_identity.current.account_id]
